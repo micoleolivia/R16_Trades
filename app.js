@@ -132,10 +132,26 @@ function notifyOnOfferChanges(oldOffers, newOffers) {
 
 function refreshAll() {
   updateHeader();
+  updateInboxBadge();
   if (!document.getElementById('mypicks').classList.contains('hidden'))     renderMyPicks();
   if (!document.getElementById('trade').classList.contains('hidden'))       renderTrade();
   if (!document.getElementById('inbox').classList.contains('hidden'))       renderInbox();
   if (!document.getElementById('leaderboard').classList.contains('hidden')) renderLeaderboard();
+}
+
+// Shows the count of pending incoming offers as a small badge on the Inbox
+// nav button, so you can tell at a glance you have offers waiting without
+// having to click in.
+function updateInboxBadge() {
+  const badge = document.getElementById('inbox-badge');
+  if (!badge || !currentUser) return;
+  const count = Object.values(state.pendingOffers).filter(o => o.to === currentUser && o.status === 'pending').length;
+  if (count > 0) {
+    badge.textContent = count;
+    badge.classList.remove('hidden');
+  } else {
+    badge.classList.add('hidden');
+  }
 }
 
 // ============================================
@@ -204,6 +220,7 @@ async function login(name) {
   document.getElementById('login-screen').classList.add('hidden');
   document.getElementById('app').classList.remove('hidden');
   updateHeader();
+  updateInboxBadge();
   showSection('mypicks', { target: document.getElementById('nav-mypicks') });
   startListener();
 }
