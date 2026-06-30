@@ -308,6 +308,14 @@ window.sendTradeOffer = async function(targetName) {
   const want = [...tradeSelection.want];
   if (give.length === 0 || want.length === 0) { showToast('Select at least one team on each side.','error'); return; }
 
+  const alreadyPending = Object.values(state.pendingOffers).some(o =>
+    o.from === currentUser && o.to === targetName && o.status === 'pending'
+  );
+  if (alreadyPending) {
+    showToast(`You already have a pending offer to ${targetName} — withdraw it first if you want to change it.`,'error');
+    return;
+  }
+
   const giveNames = give.map(id => getTeam(id)?.name).join(', ');
   const wantNames = want.map(id => getTeam(id)?.name).join(', ');
   if (!confirm(`Offer ${giveNames} for ${targetName}'s ${wantNames}?`)) return;
@@ -370,8 +378,6 @@ function renderInbox() {
 
   if (myOffers.length === 0) {
     html += `<div class="offer-empty">No incoming offers right now.</div>`;
-    container.innerHTML = html;
-    return;
   }
 
   html += myOffers.map(([id, o]) => `
@@ -394,6 +400,21 @@ function renderInbox() {
       </div>
     </div>
   `).join('');
+
+  const myResolvedIncoming = Object.entries(state.pendingOffers).filter(([id, o]) =>
+    o.to === currentUser && (o.status === 'denied' || o.status === 'accepted')
+  ).sort((a,b) => (b[1].ts||0) - (a[1].ts||0)).slice(0, 5);
+
+  if (myResolvedIncoming.length > 0) {
+    html += `<div style="height:1px;background:var(--border);margin:24px 0;"></div>
+      <h3 style="font-family:'Bebas Neue',sans-serif;letter-spacing:1px;color:var(--text3);margin-bottom:10px;">Recently resolved</h3>`;
+    myResolvedIncoming.forEach(([id, o]) => {
+      const giveNames = o.give.map(tid => getTeam(tid)?.name).join(', ');
+      const wantNames = o.want.map(tid => getTeam(tid)?.name).join(', ');
+      const label = o.status === 'accepted' ? 'accepted' : 'denied';
+      html += `<div class="offer-card" style="opacity:.6"><div class="offer-from">Offer from <strong>${o.from}</strong> (${giveNames} for ${wantNames}) — ${label}</div></div>`;
+    });
+  }
 
   container.innerHTML = html;
 }
