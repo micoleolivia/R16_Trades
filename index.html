@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>R16 Trade Test</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css"/>
+</head>
+<body>
+
+  <!-- LOGIN -->
+  <div id="login-screen">
+    <div class="login-content">
+      <div class="login-badge">R16 TRADE TEST</div>
+      <h1 class="login-title">TRADE<br>SANDBOX</h1>
+      <p class="login-sub">Pick who you are (simulated R16 squads)</p>
+      <div id="player-buttons"></div>
+      <button class="reset-btn" style="margin-top:24px" onclick="resetSimulation()">🔁 Re-roll random squads</button>
+    </div>
+  </div>
+
+  <!-- APP -->
+  <div id="app" class="hidden">
+    <header>
+      <div class="header-left">
+        <span class="header-logo">🔁</span>
+        <div>
+          <div class="header-title">R16 TRADE TEST</div>
+          <div id="welcome-msg" class="header-welcome"></div>
+        </div>
+      </div>
+      <nav id="main-nav">
+        <button id="nav-mypicks"   class="nav-btn" onclick="showSection('mypicks',event)">My Squad</button>
+        <button id="nav-trade"     class="nav-btn" onclick="showSection('trade',event)">Trade</button>
+        <button id="nav-inbox"     class="nav-btn" onclick="showSection('inbox',event)">Inbox</button>
+        <button id="nav-leaderboard" class="nav-btn" onclick="showSection('leaderboard',event)">Leaderboard</button>
+      </nav>
+      <div class="header-actions">
+        <button class="logout-btn" onclick="logout()">← Switch</button>
+      </div>
+    </header>
+
+    <section id="mypicks" class="section hidden">
+      <div class="section-header"><h2>My Squad</h2><p>Teams you currently own (simulated)</p></div>
+      <div id="mypicks-container"></div>
+    </section>
+
+    <section id="trade" class="section hidden">
+      <div class="section-header"><h2>Propose a Trade</h2><p>Pick a player, offer your teams for theirs. They can accept or decline.</p></div>
+      <div id="trade-container"></div>
+    </section>
+
+    <section id="inbox" class="section hidden">
+      <div class="section-header"><h2>Trade Inbox</h2><p>Offers sent to you</p></div>
+      <div id="inbox-container"></div>
+    </section>
+
+    <section id="leaderboard" class="section hidden">
+      <div class="section-header"><h2>Leaderboard</h2><p>Team counts — trades only become visible here once accepted</p></div>
+      <div id="leaderboard-container"></div>
+    </section>
+  </div>
+
+  <div id="toast" class="toast hidden"></div>
+  <script type="module" src="app.js"></script>
+</body>
+</html>
