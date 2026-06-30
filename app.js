@@ -95,10 +95,37 @@ function startListener() {
   unsubscribe = onSnapshot(TEST_DOC, snap => {
     if (snap.exists()) {
       const d = snap.data();
+      const newOffers = d.pendingOffers || {};
+      notifyOnOfferChanges(state.pendingOffers, newOffers);
       state.collection    = d.collection    || {};
-      state.pendingOffers = d.pendingOffers || {};
+      state.pendingOffers = newOffers;
       state.tradeLog      = d.tradeLog      || [];
       refreshAll();
+    }
+  });
+}
+
+// Compares the previous and incoming pendingOffers and pops a toast for any
+// of the current user's OWN sent offers that just resolved (accepted or
+// denied) since the last update — so you find out live, without needing to
+// be sitting on the Inbox tab.
+let notifiedOfferIds = new Set();
+function notifyOnOfferChanges(oldOffers, newOffers) {
+  if (!currentUser || !oldOffers) return;
+  Object.entries(newOffers).forEach(([id, offer]) => {
+    if (offer.from !== currentUser) return;
+    const prevStatus = oldOffers[id]?.status;
+    if (prevStatus !== 'pending') return;
+    if (offer.status !== 'accepted' && offer.status !== 'denied') return;
+    if (notifiedOfferIds.has(id)) return;
+    notifiedOfferIds.add(id);
+
+    const giveNames = offer.give.map(tid => getTeam(tid)?.name).join(' + ');
+    const wantNames  = offer.want.map(tid => getTeam(tid)?.name).join(' + ');
+    if (offer.status === 'accepted') {
+      showToast(`✅ Your trade with ${offer.to} went through — ${giveNames} for ${wantNames}!`, 'success');
+    } else {
+      showToast(`❌ Your offer to ${offer.to} for ${wantNames} was denied.`, 'error');
     }
   });
 }
@@ -166,6 +193,14 @@ async function login(name) {
   state.tradeLog       = d.tradeLog      || [];
 
   currentUser = name;
+  // Don't notify for offers that were already resolved before this login —
+  // only fire toasts for changes that happen DURING this session.
+  notifiedOfferIds = new Set(
+    Object.entries(state.pendingOffers)
+      .filter(([id, o]) => o.from === currentUser && o.status !== 'pending')
+      .map(([id]) => id)
+  );
+
   document.getElementById('login-screen').classList.add('hidden');
   document.getElementById('app').classList.remove('hidden');
   updateHeader();
@@ -177,6 +212,7 @@ window.login = login;
 function logout() {
   if (unsubscribe) unsubscribe();
   currentUser = null;
+  notifiedOfferIds = new Set();
   document.getElementById('app').classList.add('hidden');
   document.getElementById('login-screen').classList.remove('hidden');
 }
