@@ -222,13 +222,13 @@ function renderMyPicks() {
 // them. While busy, nobody else can open a new trade with them — keeps
 // trades strictly sequential, no racing offers on the same team.
 // ============================================
-function isPlayerBusy(username) {
-  return Object.values(state.pendingOffers).some(o => o.to === username && o.status === 'pending');
-}
-
-function getPendingOfferTo(username) {
-  return Object.entries(state.pendingOffers).find(([id, o]) => o.to === username && o.status === 'pending');
-}
+// No busy-lock — multiple players can propose trades to the same person at
+// once. The recipient sees all pending offers and picks one to accept; every
+// other pending offer that becomes impossible as a result is auto-denied,
+// with no explanation given to the sender (they just see "denied" — same as
+// if the recipient had simply declined). This keeps trades genuinely secret:
+// nobody outside the two parties in an ACCEPTED trade ever learns it happened
+// until the leaderboard's trade log reflects it.
 
 // ============================================
 // PROPOSE TRADE
@@ -267,11 +267,6 @@ function renderTradeBody(targetName) {
   const body = document.getElementById('trade-body');
   if (!body) return;
 
-  if (isPlayerBusy(targetName)) {
-    body.innerHTML = `<div class="trade-locked-msg">⏳ ${targetName} is currently considering another offer — try again shortly.</div>`;
-    return;
-  }
-
   const myTeams     = (state.collection[currentUser] || []).map(getTeam).filter(Boolean);
   const theirTeams  = (state.collection[targetName]  || []).map(getTeam).filter(Boolean);
 
@@ -309,7 +304,6 @@ window.toggleTradeSelect = function(side, teamId) {
 };
 
 window.sendTradeOffer = async function(targetName) {
-  if (isPlayerBusy(targetName)) { showToast(`${targetName} is busy with another offer.`,'error'); return; }
   const give = [...tradeSelection.give];
   const want = [...tradeSelection.want];
   if (give.length === 0 || want.length === 0) { showToast('Select at least one team on each side.','error'); return; }
@@ -333,14 +327,54 @@ function renderInbox() {
   const container = document.getElementById('inbox-container');
   if (!container) return;
 
-  const myOffers = Object.entries(state.pendingOffers).filter(([id, o]) => o.to === currentUser && o.status === 'pending');
+  const myOffers     = Object.entries(state.pendingOffers).filter(([id, o]) => o.to === currentUser && o.status === 'pending');
+  const mySentOffers = Object.entries(state.pendingOffers).filter(([id, o]) => o.from === currentUser && o.status === 'pending');
+  const myResolvedSent = Object.entries(state.pendingOffers).filter(([id, o]) => o.from === currentUser && (o.status === 'denied' || o.status === 'cancelled'));
+
+  let html = '';
+
+  if (mySentOffers.length > 0) {
+    html += `<h3 style="font-family:'Bebas Neue',sans-serif;letter-spacing:1px;color:var(--text2);margin-bottom:10px;">Offers you've sent</h3>`;
+    mySentOffers.forEach(([id, o]) => {
+      html += `
+        <div class="offer-card">
+          <div class="offer-from">Sent to <strong>${o.to}</strong> — awaiting response</div>
+          <div class="offer-row">
+            <div class="offer-side">
+              <div class="offer-side-label">You give</div>
+              <div class="offer-teams">${o.give.map(tid => { const t=getTeam(tid); return `<span class="offer-team-badge">${t?.flag} ${t?.name}</span>`; }).join('')}</div>
+            </div>
+            <div class="offer-arrow">⇄</div>
+            <div class="offer-side">
+              <div class="offer-side-label">You want</div>
+              <div class="offer-teams">${o.want.map(tid => { const t=getTeam(tid); return `<span class="offer-team-badge">${t?.flag} ${t?.name}</span>`; }).join('')}</div>
+            </div>
+          </div>
+          <div class="offer-btns">
+            <button class="offer-btn-decline" onclick="cancelMyOffer('${id}')">✖ Withdraw offer</button>
+          </div>
+        </div>`;
+    });
+  }
+
+  if (myResolvedSent.length > 0) {
+    html += `<h3 style="font-family:'Bebas Neue',sans-serif;letter-spacing:1px;color:var(--text3);margin:18px 0 10px;">Recently resolved</h3>`;
+    myResolvedSent.slice(0,5).forEach(([id, o]) => {
+      html += `<div class="offer-card" style="opacity:.6"><div class="offer-from">Offer to <strong>${o.to}</strong> — denied</div></div>`;
+    });
+  }
+
+  if (mySentOffers.length > 0 || myResolvedSent.length > 0) {
+    html += `<div style="height:1px;background:var(--border);margin:24px 0;"></div>`;
+  }
 
   if (myOffers.length === 0) {
-    container.innerHTML = `<div class="offer-empty">No pending offers right now.</div>`;
+    html += `<div class="offer-empty">No incoming offers right now.</div>`;
+    container.innerHTML = html;
     return;
   }
 
-  container.innerHTML = myOffers.map(([id, o]) => `
+  html += myOffers.map(([id, o]) => `
     <div class="offer-card">
       <div class="offer-from">Offer from <strong>${o.from}</strong></div>
       <div class="offer-row">
@@ -360,14 +394,24 @@ function renderInbox() {
       </div>
     </div>
   `).join('');
+
+  container.innerHTML = html;
 }
+
+window.cancelMyOffer = async function(offerId) {
+  if (!confirm('Withdraw this offer?')) return;
+  if (state.pendingOffers[offerId]) state.pendingOffers[offerId].status = 'cancelled';
+  await saveState({ pendingOffers: state.pendingOffers });
+  showToast('Offer withdrawn.','');
+  refreshAll();
+};
 
 window.respondToOffer = async function(offerId, accept) {
   const offer = state.pendingOffers[offerId];
   if (!offer) return;
 
   if (!accept) {
-    state.pendingOffers[offerId].status = 'declined';
+    state.pendingOffers[offerId].status = 'denied';
     await saveState({ pendingOffers: state.pendingOffers });
     showToast('Offer declined.','');
     renderInbox();
@@ -390,6 +434,20 @@ window.respondToOffer = async function(offerId, accept) {
   state.collection[offer.from] = fromCol.filter(tid => !offer.give.includes(tid)).concat(offer.want);
   state.collection[offer.to]   = toCol.filter(tid => !offer.want.includes(tid)).concat(offer.give);
   state.pendingOffers[offerId].status = 'accepted';
+
+  // Any other pending offer that touches a team that just changed hands is
+  // now impossible — auto-deny it. The sender just sees "denied", with no
+  // way to tell whether it was a deliberate decline or this collision, which
+  // is exactly the secrecy you want (e.g. Sean never learns Zac traded
+  // Sweden to Micole — he just learns his own offer didn't go through).
+  const movedTeams = new Set([...offer.give, ...offer.want]);
+  Object.entries(state.pendingOffers).forEach(([otherId, otherOffer]) => {
+    if (otherId === offerId || otherOffer.status !== 'pending') return;
+    const touchesMoved = [...otherOffer.give, ...otherOffer.want].some(tid => movedTeams.has(tid));
+    if (touchesMoved) {
+      state.pendingOffers[otherId].status = 'denied';
+    }
+  });
 
   if (!state.tradeLog) state.tradeLog = [];
   state.tradeLog.unshift({
