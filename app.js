@@ -390,7 +390,9 @@ function renderInbox() {
 
   const myOffers     = Object.entries(state.pendingOffers).filter(([id, o]) => o.to === currentUser && o.status === 'pending');
   const mySentOffers = Object.entries(state.pendingOffers).filter(([id, o]) => o.from === currentUser && o.status === 'pending');
-  const myResolvedSent = Object.entries(state.pendingOffers).filter(([id, o]) => o.from === currentUser && (o.status === 'denied' || o.status === 'cancelled'));
+  const myResolvedSent = Object.entries(state.pendingOffers)
+    .filter(([id, o]) => o.from === currentUser && (o.status === 'denied' || o.status === 'cancelled' || o.status === 'accepted'))
+    .sort((a,b) => (b[1].ts||0) - (a[1].ts||0));
 
   let html = '';
 
@@ -421,7 +423,15 @@ function renderInbox() {
   if (myResolvedSent.length > 0) {
     html += `<h3 style="font-family:'Bebas Neue',sans-serif;letter-spacing:1px;color:var(--text3);margin:18px 0 10px;">Recently resolved</h3>`;
     myResolvedSent.slice(0,5).forEach(([id, o]) => {
-      html += `<div class="offer-card" style="opacity:.6"><div class="offer-from">Offer to <strong>${o.to}</strong> — denied</div></div>`;
+      const giveNames = o.give.map(tid => getTeam(tid)?.name).join(', ');
+      const wantNames = o.want.map(tid => getTeam(tid)?.name).join(', ');
+      if (o.status === 'accepted') {
+        html += `<div class="offer-card" style="border-color:rgba(0,212,170,.3)"><div class="offer-from">✅ Trade with <strong>${o.to}</strong> went through — ${giveNames} for ${wantNames}</div></div>`;
+      } else if (o.status === 'cancelled') {
+        html += `<div class="offer-card" style="opacity:.6"><div class="offer-from">Offer to <strong>${o.to}</strong> — withdrawn by you</div></div>`;
+      } else {
+        html += `<div class="offer-card" style="opacity:.6"><div class="offer-from">Offer to <strong>${o.to}</strong> (${giveNames} for ${wantNames}) — denied</div></div>`;
+      }
     });
   }
 
