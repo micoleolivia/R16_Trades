@@ -68,7 +68,10 @@ function getTeam(teamId) {
 // ============================================
 let currentUser = null;
 let state = {
-  collection: {},   // { username: [teamId, teamId, ...] }
+  collection: {},     // { username: [teamId, teamId, ...] } — REAL, live ownership
+  publicSnapshot: {},  // { username: [teamId, teamId, ...] } — what others can SEE when browsing
+                       // who to trade with. Only updated by admin "reveal", not automatically
+                       // when trades complete — this is what keeps trades genuinely secret.
   pendingOffers: {}, // { offerId: { from, to, give:[teamIds], want:[teamIds], status } }
   tradeLog: [],      // completed trades, for leaderboard reveal
 };
@@ -97,9 +100,10 @@ function startListener() {
       const d = snap.data();
       const newOffers = d.pendingOffers || {};
       notifyOnOfferChanges(state.pendingOffers, newOffers);
-      state.collection    = d.collection    || {};
-      state.pendingOffers = newOffers;
-      state.tradeLog      = d.tradeLog      || [];
+      state.collection     = d.collection     || {};
+      state.publicSnapshot = d.publicSnapshot || d.collection || {};
+      state.pendingOffers  = newOffers;
+      state.tradeLog       = d.tradeLog       || [];
       refreshAll();
     }
   });
@@ -177,8 +181,10 @@ function generateRandomSquads() {
 
 window.resetSimulation = async function() {
   if (!confirm('Re-roll everyone\'s random squads and clear all pending/completed trades?')) return;
+  const squads = generateRandomSquads();
   const fresh = {
-    collection: generateRandomSquads(),
+    collection: squads,
+    publicSnapshot: { ...squads }, // public knowledge starts identical to reality
     pendingOffers: {},
     tradeLog: [],
   };
@@ -201,12 +207,14 @@ function renderLoginButtons() {
 async function login(name) {
   let d = await loadState();
   if (!d || !d.collection || Object.keys(d.collection).length === 0) {
-    d = { collection: generateRandomSquads(), pendingOffers: {}, tradeLog: [] };
+    const squads = generateRandomSquads();
+    d = { collection: squads, publicSnapshot: { ...squads }, pendingOffers: {}, tradeLog: [] };
     await setDoc(TEST_DOC, d);
   }
-  state.collection    = d.collection    || {};
-  state.pendingOffers = d.pendingOffers || {};
-  state.tradeLog       = d.tradeLog      || [];
+  state.collection     = d.collection     || {};
+  state.publicSnapshot = d.publicSnapshot || d.collection || {};
+  state.pendingOffers  = d.pendingOffers  || {};
+  state.tradeLog        = d.tradeLog       || [];
 
   currentUser = name;
   // Don't notify for offers that were already resolved before this login —
@@ -294,6 +302,7 @@ function renderTrade() {
 
   const otherPlayers = PLAYERS.filter(p => p.name !== currentUser);
   const lastTarget = container.dataset.target || otherPlayers[0]?.name;
+  const isAdmin = currentUser === 'Micole';
 
   container.innerHTML = `
     <div class="trade-pick">
@@ -303,10 +312,22 @@ function renderTrade() {
       </select>
     </div>
     <div id="trade-body"></div>
+    ${isAdmin ? `<button class="logout-btn" style="margin-top:24px" onclick="revealPublicSnapshot()">🔁 Reveal trades to date (admin)</button>` : ''}
   `;
   container.dataset.target = lastTarget;
   renderTradeBody(lastTarget);
 }
+
+// Admin-only: catches the "public knowledge" snapshot up to real ownership —
+// stands in for the real game's rule that a traded team's ownership only
+// becomes visible to everyone once that team plays its next match.
+window.revealPublicSnapshot = async function() {
+  if (!confirm('Reveal all trades made so far to everyone? (simulates traded teams playing their next match)')) return;
+  state.publicSnapshot = JSON.parse(JSON.stringify(state.collection));
+  await saveState({ publicSnapshot: state.publicSnapshot });
+  showToast('🔁 Public knowledge updated!','success');
+  renderTrade();
+};
 
 window.onTradeTargetChange = function() {
   const select = document.getElementById('trade-target-select');
@@ -320,8 +341,12 @@ function renderTradeBody(targetName) {
   const body = document.getElementById('trade-body');
   if (!body) return;
 
-  const myTeams     = (state.collection[currentUser] || []).map(getTeam).filter(Boolean);
-  const theirTeams  = (state.collection[targetName]  || []).map(getTeam).filter(Boolean);
+  const myTeams    = (state.collection[currentUser] || []).map(getTeam).filter(Boolean);
+  // Deliberately uses publicSnapshot, NOT the live state.collection — this is
+  // what keeps trades secret. If targetName secretly traded a team away, it
+  // still shows here until an admin "reveal" catches the snapshot up; if you
+  // try to request it anyway, sendTradeOffer will catch that at send-time.
+  const theirTeams = (state.publicSnapshot[targetName] || []).map(getTeam).filter(Boolean);
 
   body.innerHTML = `
     <div class="trade-cols">
@@ -360,6 +385,17 @@ window.sendTradeOffer = async function(targetName) {
   const give = [...tradeSelection.give];
   const want = [...tradeSelection.want];
   if (give.length === 0 || want.length === 0) { showToast('Select at least one team on each side.','error'); return; }
+
+  // Validate against REAL ownership, not the public snapshot the picker was
+  // built from — if targetName secretly traded away a requested team, this
+  // catches it. No detail is given about why, same as elsewhere.
+  const theirRealTeams = state.collection[targetName] || [];
+  const stillHasAll = want.every(tid => theirRealTeams.includes(tid));
+  if (!stillHasAll) {
+    showToast(`One of those teams is no longer available from ${targetName}.`,'error');
+    renderTrade();
+    return;
+  }
 
   const alreadyPending = Object.values(state.pendingOffers).some(o =>
     o.from === currentUser && o.to === targetName && o.status === 'pending'
