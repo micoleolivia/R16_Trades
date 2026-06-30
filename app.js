@@ -101,7 +101,10 @@ function startListener() {
       const newOffers = d.pendingOffers || {};
       notifyOnOfferChanges(state.pendingOffers, newOffers);
       state.collection     = d.collection     || {};
-      state.publicSnapshot = d.publicSnapshot || d.collection || {};
+      // No fallback to d.collection here on purpose — login() guarantees a
+      // real, persisted publicSnapshot exists before the listener starts.
+      // Falling back to live data here would silently defeat the secrecy.
+      state.publicSnapshot = d.publicSnapshot || {};
       state.pendingOffers  = newOffers;
       state.tradeLog       = d.tradeLog       || [];
       refreshAll();
@@ -210,9 +213,14 @@ async function login(name) {
     const squads = generateRandomSquads();
     d = { collection: squads, publicSnapshot: { ...squads }, pendingOffers: {}, tradeLog: [] };
     await setDoc(TEST_DOC, d);
+  } else if (!d.publicSnapshot) {
+    // Existing test data predates the snapshot feature — freeze a copy NOW
+    // and save it, so it stops silently mirroring live data on every load.
+    d.publicSnapshot = JSON.parse(JSON.stringify(d.collection));
+    await saveState({ publicSnapshot: d.publicSnapshot });
   }
   state.collection     = d.collection     || {};
-  state.publicSnapshot = d.publicSnapshot || d.collection || {};
+  state.publicSnapshot = d.publicSnapshot || {};
   state.pendingOffers  = d.pendingOffers  || {};
   state.tradeLog        = d.tradeLog       || [];
 
